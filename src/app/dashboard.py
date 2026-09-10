@@ -150,39 +150,129 @@ with tab1:
 with tab2:
     st.subheader("2. Generation Dispatch: How the Grid Absorbed the Plunge")
     st.markdown("""
-    When load collapses by over 11,000 MW in 2 hours, the grid operator (ONS) must instantly throttle generation to prevent catastrophic over-frequency.
-    Hydropower provides the rapid spinning reserve to back down and ramp back up, while thermal baseload remains modulated.
+    In Brazil, hydroelectric plants act as the primary dynamic buffer for grid frequency regulation.
+    During World Cup matches, the system operator (ONS) throttles hydropower down by thousands of MW to absorb the demand collapse and ramps it back up instantly at the final whistle.
     """)
     
-    fig_gen = go.Figure()
-    fig_gen.add_trace(go.Scatter(
-        x=sin_match_data["hour"], y=sin_match_data["hydro_gen_mw"],
-        mode="lines", name="Hydro Generation (MW)", line=dict(color="#58a6ff", width=2.5)
-    ))
-    fig_gen.add_trace(go.Scatter(
-        x=sin_match_data["hour"], y=sin_match_data["thermal_gen_mw"],
-        mode="lines", name="Thermal Generation (MW)", line=dict(color="#f0883e", width=2)
-    ))
-    fig_gen.add_trace(go.Scatter(
-        x=sin_match_data["hour"], y=sin_match_data["wind_gen_mw"],
-        mode="lines", name="Wind Generation (MW)", line=dict(color="#3fb950", width=1.5, dash="dot")
-    ))
-    fig_gen.add_trace(go.Scatter(
-        x=sin_match_data["hour"], y=sin_match_data["solar_gen_mw"],
-        mode="lines", name="Solar Generation (MW)", line=dict(color="#e3b341", width=1.5, dash="dot")
-    ))
+    col_view, col_dummy = st.columns([1, 2])
+    with col_view:
+        time_scope = st.radio(
+            "Time Window:",
+            ["Focused Match Window (3h Before to 3h After)", "Full 24-Hour Daily Profile"],
+            horizontal=True
+        )
+    
+    k_hour = int(match_info["kickoff_time"].split(":")[0])
+    # Extract end hour from match config
+    end_hour = k_hour + (3 if "Croatia" in match_info["opponent"] else 2)
+    
+    if "Focused" in time_scope:
+        start_h = max(0, k_hour - 3)
+        finish_h = min(23, end_hour + 3)
+        plot_gen_data = sin_match_data[(sin_match_data["hour"] >= start_h) & (sin_match_data["hour"] <= finish_h)].copy()
+    else:
+        plot_gen_data = sin_match_data.copy()
+        start_h, finish_h = 0, 23
+        
+    # Stacked 2-row Subplots: Top for Hydro (zoomed), Bottom for Thermal/Wind/Solar
+    fig_gen = make_subplots(
+        rows=2, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.12,
+        subplot_titles=(
+            "Hydroelectric Generation (Primary Reserve - Zoomed Operational Scale)",
+            "Thermal, Wind & Solar Generation (Complementary Dispatch)"
+        )
+    )
+    
+    # Trace 1: Hydro (Top)
+    fig_gen.add_trace(
+        go.Scatter(
+            x=plot_gen_data["hour"], y=plot_gen_data["hydro_gen_mw"],
+            mode="lines+markers", name="Hydro Generation (MW)",
+            line=dict(color="#58a6ff", width=3),
+            marker=dict(size=6)
+        ),
+        row=1, col=1
+    )
+    
+    # Traces 2, 3, 4: Thermal, Wind, Solar (Bottom)
+    fig_gen.add_trace(
+        go.Scatter(
+            x=plot_gen_data["hour"], y=plot_gen_data["thermal_gen_mw"],
+            mode="lines+markers", name="Thermal Generation (MW)",
+            line=dict(color="#f0883e", width=2.5),
+            marker=dict(size=5)
+        ),
+        row=2, col=1
+    )
+    fig_gen.add_trace(
+        go.Scatter(
+            x=plot_gen_data["hour"], y=plot_gen_data["wind_gen_mw"],
+            mode="lines+markers", name="Wind Generation (MW)",
+            line=dict(color="#3fb950", width=2, dash="dot"),
+            marker=dict(size=4)
+        ),
+        row=2, col=1
+    )
+    fig_gen.add_trace(
+        go.Scatter(
+            x=plot_gen_data["hour"], y=plot_gen_data["solar_gen_mw"],
+            mode="lines+markers", name="Solar Generation (MW)",
+            line=dict(color="#e3b341", width=2, dash="dot"),
+            marker=dict(size=4)
+        ),
+        row=2, col=1
+    )
+    
+    # Highlight match window in both subplots
+    for r in [1, 2]:
+        fig_gen.add_vrect(
+            x0=k_hour - 0.1, x1=end_hour + 0.1,
+            fillcolor="#f85149", opacity=0.15,
+            annotation_text="Match in Progress" if r == 1 else "",
+            annotation_position="top left",
+            row=r, col=1
+        )
+    
+    # Zoom Hydro Y-axis to cut low baseline
+    min_hydro = plot_gen_data["hydro_gen_mw"].min()
+    max_hydro = plot_gen_data["hydro_gen_mw"].max()
+    fig_gen.update_yaxes(
+        title_text="Hydro (MW)",
+        range=[min_hydro - 1200, max_hydro + 1200],
+        row=1, col=1
+    )
+    fig_gen.update_yaxes(
+        title_text="Other Sources (MW)",
+        row=2, col=1
+    )
+    fig_gen.update_xaxes(
+        title_text="Hour of Day (BRT)",
+        tickmode="linear", dtick=1,
+        row=2, col=1
+    )
     
     fig_gen.update_layout(
         template="plotly_dark",
-        height=400,
-        margin=dict(l=20, r=20, t=30, b=20),
-        xaxis_title="Hour of Day (BRT)",
-        yaxis_title="Generation (MW)",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        height=540,
+        margin=dict(l=20, r=20, t=40, b=20),
+        legend=dict(orientation="h", yanchor="bottom", y=1.04, xanchor="right", x=1)
     )
     st.plotly_chart(fig_gen, use_container_width=True)
     
-    st.caption("**Insight:** Hydro generation directly mirrors the load drop, throttled down by ~8,000 MW during match hours to maintain 60 Hz grid stability.")
+    # Summary calculation of hydro throttling
+    hydro_start = plot_gen_data[plot_gen_data["hour"] == k_hour]["hydro_gen_mw"].values[0] if len(plot_gen_data[plot_gen_data["hour"] == k_hour]) else 0
+    hydro_min = plot_gen_data[(plot_gen_data["hour"] >= k_hour) & (plot_gen_data["hour"] <= end_hour)]["hydro_gen_mw"].min()
+    hydro_post = plot_gen_data[plot_gen_data["hour"] == min(23, end_hour + 2)]["hydro_gen_mw"].values[0] if len(plot_gen_data[plot_gen_data["hour"] == min(23, end_hour + 2)]) else 0
+    
+    st.markdown(f"""
+    <div class="info-box">
+        <b>Hydropower Flexibility Summary:</b><br>
+        During this match, hydropower throttled down from <b>{hydro_start:,.0f} MW</b> to <b>{hydro_min:,.0f} MW</b> (absorbing a direct drop of <b>{hydro_start - hydro_min:,.0f} MW</b>).<br>
+        Following the final whistle, hydro dispatch surged to <b>{hydro_post:,.0f} MW</b> (+{hydro_post - hydro_min:,.0f} MW ramp) to meet the sudden reconnection of national load, while thermal units were kept on stable baseload.
+    </div>
+    """, unsafe_allow_html=True)
 
 with tab3:
     st.subheader("3. Subsystem Breakdown: Where Did Demand Fall?")
