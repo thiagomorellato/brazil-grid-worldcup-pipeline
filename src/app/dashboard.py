@@ -308,38 +308,103 @@ with tab3:
         st.caption("**Concentration:** Over **55%** of the entire national collapse originated strictly in the Southeast/Central-West (SE) industrial corridor (São Paulo, Rio, Minas Gerais).")
         
     with col_y:
-        st.markdown("**Regional Load Profiles (Hourly Match Trajectory)**")
-        # Multi-line hourly load comparison by subsystem
+        st.markdown("**Regional Load Profiles: Southeast (Left) vs. Other Regions (Right)**")
         k_hour = int(match_info["kickoff_time"].split(":")[0])
         end_hour = k_hour + (3 if "Croatia" in match_info["opponent"] else 2)
         sub_hourly = hourly_df[(hourly_df["match_id"] == selected_match_id) & (hourly_df["id_subsistema"] != "SIN")].copy()
         sub_hourly_window = sub_hourly[(sub_hourly["hour"] >= max(0, k_hour - 3)) & (sub_hourly["hour"] <= min(23, end_hour + 3))]
         
-        fig_sub_lines = px.line(
-            sub_hourly_window,
-            x="hour",
-            y="load_mw",
-            color="id_subsistema",
-            markers=True,
-            color_discrete_map={
-                "SE": "#58a6ff",
-                "S": "#3fb950",
-                "NE": "#f0883e",
-                "N": "#a371f7"
-            },
-            labels={"hour": "Hour of Day (BRT)", "load_mw": "Load (MW)", "id_subsistema": "Subsystem"},
-            template="plotly_dark",
-            height=370
+        # Dual-Axis chart: Southeast on Left (large scale), S/NE/N on Right (smaller scale)
+        fig_sub_dual = make_subplots(specs=[[{"secondary_y": True}]])
+        
+        # Southeast (SE) on Left
+        se_data = sub_hourly_window[sub_hourly_window["id_subsistema"] == "SE"].sort_values("hour")
+        fig_sub_dual.add_trace(
+            go.Scatter(
+                x=se_data["hour"], y=se_data["load_mw"],
+                mode="lines+markers", name="Southeast / CW (Left Axis)",
+                line=dict(color="#58a6ff", width=3.5),
+                marker=dict(size=6)
+            ),
+            secondary_y=False
         )
-        fig_sub_lines.add_vrect(
+        
+        # South (S) on Right
+        s_data = sub_hourly_window[sub_hourly_window["id_subsistema"] == "S"].sort_values("hour")
+        fig_sub_dual.add_trace(
+            go.Scatter(
+                x=s_data["hour"], y=s_data["load_mw"],
+                mode="lines+markers", name="South (Right Axis)",
+                line=dict(color="#3fb950", width=2),
+                marker=dict(size=5)
+            ),
+            secondary_y=True
+        )
+        
+        # Northeast (NE) on Right
+        ne_data = sub_hourly_window[sub_hourly_window["id_subsistema"] == "NE"].sort_values("hour")
+        fig_sub_dual.add_trace(
+            go.Scatter(
+                x=ne_data["hour"], y=ne_data["load_mw"],
+                mode="lines+markers", name="Northeast (Right Axis)",
+                line=dict(color="#f0883e", width=2),
+                marker=dict(size=5)
+            ),
+            secondary_y=True
+        )
+        
+        # North (N) on Right
+        n_data = sub_hourly_window[sub_hourly_window["id_subsistema"] == "N"].sort_values("hour")
+        fig_sub_dual.add_trace(
+            go.Scatter(
+                x=n_data["hour"], y=n_data["load_mw"],
+                mode="lines+markers", name="North (Right Axis)",
+                line=dict(color="#a371f7", width=2),
+                marker=dict(size=5)
+            ),
+            secondary_y=True
+        )
+        
+        # Highlight match window
+        fig_sub_dual.add_vrect(
             x0=k_hour - 0.1, x1=end_hour + 0.1,
             fillcolor="#f85149", opacity=0.15,
             annotation_text="Match",
             annotation_position="top left"
         )
-        fig_sub_lines.update_layout(margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-        st.plotly_chart(fig_sub_lines, use_container_width=True)
-        st.caption("**Trajectory:** Notice the deep U-shape crater in the Southeast (SE) load line, dropping from 46,000 MW to under 40,000 MW during kickoff.")
+        
+        # Zoom Left axis (Southeast)
+        min_se = se_data["load_mw"].min()
+        max_se = se_data["load_mw"].max()
+        fig_sub_dual.update_yaxes(
+            title_text="Southeast / CW (MW) [Left]",
+            range=[min_se - 1000, max_se + 1000],
+            secondary_y=False
+        )
+        
+        # Zoom Right axis (Other regions)
+        other_data = sub_hourly_window[sub_hourly_window["id_subsistema"] != "SE"]
+        min_others = other_data["load_mw"].min()
+        max_others = other_data["load_mw"].max()
+        fig_sub_dual.update_yaxes(
+            title_text="S / NE / N (MW) [Right]",
+            range=[min_others - 1000, max_others + 1000],
+            secondary_y=True
+        )
+        
+        fig_sub_dual.update_xaxes(
+            title_text="Hour of Day (BRT)",
+            tickmode="linear", dtick=1
+        )
+        
+        fig_sub_dual.update_layout(
+            template="plotly_dark",
+            height=370,
+            margin=dict(l=10, r=10, t=10, b=10),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        st.plotly_chart(fig_sub_dual, use_container_width=True)
+        st.caption("**Dual-Scale Insight:** Southeast (left axis, 38k-48k MW) and the other regions (right axis, 5k-14k MW) both show distinct U-shaped dips, clearly visible without scale compression.")
 
     st.divider()
     
