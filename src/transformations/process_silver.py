@@ -1,4 +1,4 @@
-"""Process Bronze Parquet into cleaned, typed and World Cup-enriched Silver layer."""
+"""Process Bronze into cleaned, typed and World Cup schedule-enriched Silver layer."""
 import sys
 from pathlib import Path
 
@@ -8,13 +8,12 @@ if str(_ROOT) not in sys.path:
 
 import shutil
 import pandas as pd
-from src.config import BRONZE_DIR, SILVER_DIR, BRAZIL_MATCHES, SUBSYSTEMS
+from src.config import BRONZE_DIR, SILVER_DIR, BRAZIL_MATCHES
 
 def process_to_silver():
     print("[INFO] Reading Bronze layer partitions...")
     df = pd.read_parquet(BRONZE_DIR)
     
-    # Standardize column naming
     rename_cols = {
         "val_carga": "load_mw",
         "val_gerhidraulica": "hydro_gen_mw",
@@ -25,7 +24,6 @@ def process_to_silver():
     }
     df = df.rename(columns=rename_cols)
     
-    # Ensure numeric types
     metric_cols = ["load_mw", "hydro_gen_mw", "thermal_gen_mw", "wind_gen_mw", "solar_gen_mw", "interchange_mw"]
     for col in metric_cols:
         if col in df.columns:
@@ -35,7 +33,7 @@ def process_to_silver():
         df["hydro_gen_mw"] + df["thermal_gen_mw"] + df["wind_gen_mw"] + df["solar_gen_mw"]
     )
     
-    # Date & Hour helpers
+    df["year"] = df["timestamp"].dt.year
     df["date"] = df["timestamp"].dt.strftime("%Y-%m-%d")
     df["hour"] = df["timestamp"].dt.hour
     

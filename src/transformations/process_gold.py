@@ -1,4 +1,4 @@
-"""Build Gold analytical tables comparing Brazil match days against non-match baselines."""
+"""Build Gold analytical tables comparing Brazil match days (2022) against 2021 baselines."""
 import sys
 from pathlib import Path
 
@@ -19,12 +19,11 @@ def process_to_gold():
         shutil.rmtree(GOLD_DIR)
     GOLD_DIR.mkdir(parents=True, exist_ok=True)
     
-    # --- Table 1: Hourly Match vs. Baseline Comparison (SIN & Subsystems) ---
     comparison_rows = []
     for match in BRAZIL_MATCHES:
         m_id = match["match_id"]
         m_date = match["date"]
-        b_date = match["baseline_date"]
+        b_date = match["baseline_date"]  # 2021 same weekday
         opponent = match["opponent"]
         stage = match["stage"]
         kickoff = match["kickoff_hour"]
@@ -37,7 +36,7 @@ def process_to_gold():
                 match_slice[["hour", "load_mw", "hydro_gen_mw", "thermal_gen_mw", "wind_gen_mw", "solar_gen_mw"]],
                 base_slice[["hour", "load_mw", "hydro_gen_mw", "thermal_gen_mw"]],
                 on="hour",
-                suffixes=("", "_baseline")
+                suffixes=("", "_baseline_2021")
             )
             
             merged["match_id"] = m_id
@@ -47,8 +46,8 @@ def process_to_gold():
             merged["baseline_date"] = b_date
             merged["kickoff_hour"] = kickoff
             merged["id_subsistema"] = sub
-            merged["load_drop_mw"] = merged["load_mw_baseline"] - merged["load_mw"]
-            merged["load_drop_pct"] = (merged["load_drop_mw"] / merged["load_mw_baseline"] * 100).round(2)
+            merged["load_drop_mw"] = merged["load_mw_baseline_2021"] - merged["load_mw"]
+            merged["load_drop_pct"] = (merged["load_drop_mw"] / merged["load_mw_baseline_2021"] * 100).round(2)
             
             comparison_rows.append(merged)
             
@@ -57,23 +56,19 @@ def process_to_gold():
     gold_hourly_comp.to_parquet(comp_file, index=False, compression="snappy")
     print(f"[SUCCESS] Gold Hourly Comparison written: {comp_file} ({len(gold_hourly_comp):,} records)")
     
-    # --- Table 2: Match Summary Impacts & Dispatch Flexibility ---
-    # Focus on SIN national level during match hours
+    # Match Summary Table
     sin_comp = gold_hourly_comp[gold_hourly_comp["id_subsistema"] == "SIN"]
-    
     match_summaries = []
     for match in BRAZIL_MATCHES:
         m_id = match["match_id"]
         m_df = sin_comp[sin_comp["match_id"] == m_id]
         
-        # During match hours
         k_hour = match["kickoff_hour"]
         end_hour = match["end_hour"]
         during_match = m_df[(m_df["hour"] >= k_hour) & (m_df["hour"] <= end_hour)]
         
         max_drop_row = during_match.loc[during_match["load_drop_mw"].idxmax()]
         
-        # Post-match ramp (2 hours after end_hour)
         post_hour = min(23, end_hour + 2)
         load_end = m_df[m_df["hour"] == end_hour]["load_mw"].values[0] if len(m_df[m_df["hour"] == end_hour]) else 0
         load_post = m_df[m_df["hour"] == post_hour]["load_mw"].values[0] if len(m_df[m_df["hour"] == post_hour]) else 0
@@ -86,8 +81,8 @@ def process_to_gold():
             "match_date": match["date"],
             "kickoff_time": f"{match['kickoff_hour']}:00 BRT",
             "result": match["result"],
-            "baseline_date": match["baseline_date"],
-            "baseline_load_mw": max_drop_row["load_mw_baseline"],
+            "baseline_date_2021": match["baseline_date"],
+            "baseline_load_mw": max_drop_row["load_mw_baseline_2021"],
             "match_load_mw": max_drop_row["load_mw"],
             "max_load_drop_mw": max_drop_row["load_drop_mw"],
             "max_load_drop_pct": max_drop_row["load_drop_pct"],
