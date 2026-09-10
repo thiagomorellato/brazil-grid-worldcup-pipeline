@@ -163,7 +163,6 @@ with tab2:
         )
     
     k_hour = int(match_info["kickoff_time"].split(":")[0])
-    # Extract end hour from match config
     end_hour = k_hour + (3 if "Croatia" in match_info["opponent"] else 2)
     
     if "Focused" in time_scope:
@@ -174,90 +173,88 @@ with tab2:
         plot_gen_data = sin_match_data.copy()
         start_h, finish_h = 0, 23
         
-    # Stacked 2-row Subplots: Top for Hydro (zoomed), Bottom for Thermal/Wind/Solar
-    fig_gen = make_subplots(
-        rows=2, cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.12,
-        subplot_titles=(
-            "Hydroelectric Generation (Primary Reserve - Zoomed Operational Scale)",
-            "Thermal, Wind & Solar Generation (Complementary Dispatch)"
-        )
-    )
+    # Single unified Dual-Axis chart: Hydro on Left, Thermal/Wind/Solar on Right
+    fig_gen = make_subplots(specs=[[{"secondary_y": True}]])
     
-    # Trace 1: Hydro (Top)
+    # Primary Y-axis (Left): Hydro Generation
     fig_gen.add_trace(
         go.Scatter(
             x=plot_gen_data["hour"], y=plot_gen_data["hydro_gen_mw"],
-            mode="lines+markers", name="Hydro Generation (MW)",
-            line=dict(color="#58a6ff", width=3),
-            marker=dict(size=6)
+            mode="lines+markers", name="Hydro Generation (Left Axis)",
+            line=dict(color="#58a6ff", width=3.5),
+            marker=dict(size=7)
         ),
-        row=1, col=1
+        secondary_y=False
     )
     
-    # Traces 2, 3, 4: Thermal, Wind, Solar (Bottom)
+    # Secondary Y-axis (Right): Thermal, Wind, Solar
     fig_gen.add_trace(
         go.Scatter(
             x=plot_gen_data["hour"], y=plot_gen_data["thermal_gen_mw"],
-            mode="lines+markers", name="Thermal Generation (MW)",
+            mode="lines+markers", name="Thermal Generation (Right Axis)",
             line=dict(color="#f0883e", width=2.5),
-            marker=dict(size=5)
+            marker=dict(size=6)
         ),
-        row=2, col=1
+        secondary_y=True
     )
     fig_gen.add_trace(
         go.Scatter(
             x=plot_gen_data["hour"], y=plot_gen_data["wind_gen_mw"],
-            mode="lines+markers", name="Wind Generation (MW)",
+            mode="lines+markers", name="Wind Generation (Right Axis)",
             line=dict(color="#3fb950", width=2, dash="dot"),
-            marker=dict(size=4)
+            marker=dict(size=5)
         ),
-        row=2, col=1
+        secondary_y=True
     )
     fig_gen.add_trace(
         go.Scatter(
             x=plot_gen_data["hour"], y=plot_gen_data["solar_gen_mw"],
-            mode="lines+markers", name="Solar Generation (MW)",
+            mode="lines+markers", name="Solar Generation (Right Axis)",
             line=dict(color="#e3b341", width=2, dash="dot"),
-            marker=dict(size=4)
+            marker=dict(size=5)
         ),
-        row=2, col=1
+        secondary_y=True
     )
     
-    # Highlight match window in both subplots
-    for r in [1, 2]:
-        fig_gen.add_vrect(
-            x0=k_hour - 0.1, x1=end_hour + 0.1,
-            fillcolor="#f85149", opacity=0.15,
-            annotation_text="Match in Progress" if r == 1 else "",
-            annotation_position="top left",
-            row=r, col=1
-        )
+    # Highlight match window
+    fig_gen.add_vrect(
+        x0=k_hour - 0.1, x1=end_hour + 0.1,
+        fillcolor="#f85149", opacity=0.15,
+        annotation_text="Match in Progress",
+        annotation_position="top left"
+    )
     
-    # Zoom Hydro Y-axis to cut low baseline
+    # Zoom Hydro Y-axis to cut off low baseline values
     min_hydro = plot_gen_data["hydro_gen_mw"].min()
     max_hydro = plot_gen_data["hydro_gen_mw"].max()
     fig_gen.update_yaxes(
-        title_text="Hydro (MW)",
-        range=[min_hydro - 1200, max_hydro + 1200],
-        row=1, col=1
+        title_text="Hydro Generation (MW) [Left Axis]",
+        range=[min_hydro - 1500, max_hydro + 1500],
+        secondary_y=False
+    )
+    
+    # Scale for secondary sources
+    max_secondary = max(
+        plot_gen_data["thermal_gen_mw"].max(),
+        plot_gen_data["wind_gen_mw"].max(),
+        plot_gen_data["solar_gen_mw"].max()
     )
     fig_gen.update_yaxes(
-        title_text="Other Sources (MW)",
-        row=2, col=1
+        title_text="Thermal, Wind & Solar (MW) [Right Axis]",
+        range=[0, max_secondary + 1500],
+        secondary_y=True
     )
+    
     fig_gen.update_xaxes(
         title_text="Hour of Day (BRT)",
-        tickmode="linear", dtick=1,
-        row=2, col=1
+        tickmode="linear", dtick=1
     )
     
     fig_gen.update_layout(
         template="plotly_dark",
-        height=540,
-        margin=dict(l=20, r=20, t=40, b=20),
-        legend=dict(orientation="h", yanchor="bottom", y=1.04, xanchor="right", x=1)
+        height=480,
+        margin=dict(l=20, r=20, t=30, b=20),
+        legend=dict(orientation="h", yanchor="bottom", y=1.03, xanchor="right", x=1)
     )
     st.plotly_chart(fig_gen, use_container_width=True)
     
@@ -269,8 +266,8 @@ with tab2:
     st.markdown(f"""
     <div class="info-box">
         <b>Hydropower Flexibility Summary:</b><br>
-        During this match, hydropower throttled down from <b>{hydro_start:,.0f} MW</b> to <b>{hydro_min:,.0f} MW</b> (absorbing a direct drop of <b>{hydro_start - hydro_min:,.0f} MW</b>).<br>
-        Following the final whistle, hydro dispatch surged to <b>{hydro_post:,.0f} MW</b> (+{hydro_post - hydro_min:,.0f} MW ramp) to meet the sudden reconnection of national load, while thermal units were kept on stable baseload.
+        During this match, hydropower throttled down from <b>{hydro_start:,.0f} MW</b> to <b>{hydro_min:,.0f} MW</b> (absorbing a direct drop of <b>{hydro_start - hydro_min:,.0f} MW</b> on the left scale).<br>
+        Following the final whistle, hydro dispatch surged to <b>{hydro_post:,.0f} MW</b> (+{hydro_post - hydro_min:,.0f} MW ramp) to meet the sudden reconnection of national load, while thermal and renewable sources (right scale) modulated smoothly.
     </div>
     """, unsafe_allow_html=True)
 
