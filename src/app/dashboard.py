@@ -55,9 +55,28 @@ def load_data():
     hourly_df = pd.read_parquet(hourly_file) if hourly_file.exists() else None
     summary_df = pd.read_parquet(summary_file) if summary_file.exists() else None
     
+    # Defensive column normalization
+    if hourly_df is not None:
+        if "load_mw_baseline_2021" not in hourly_df.columns and "load_mw_baseline" in hourly_df.columns:
+            hourly_df["load_mw_baseline_2021"] = hourly_df["load_mw_baseline"]
+        elif "load_mw_baseline" not in hourly_df.columns and "load_mw_baseline_2021" in hourly_df.columns:
+            hourly_df["load_mw_baseline"] = hourly_df["load_mw_baseline_2021"]
+            
+    if summary_df is not None:
+        if "baseline_date_2021" not in summary_df.columns and "baseline_date" in summary_df.columns:
+            summary_df["baseline_date_2021"] = summary_df["baseline_date"]
+            
     return silver_df, hourly_df, summary_df
 
 silver_df, hourly_df, summary_df = load_data()
+
+# Sidebar Cache & Controls
+with st.sidebar:
+    st.header("Pipeline Controls")
+    if st.button("Refresh Data Cache"):
+        st.cache_data.clear()
+        st.rerun()
+    st.caption("ONS Open Data Lakehouse (2021 vs 2022)")
 
 st.title("Brazil Power Grid: FIFA World Cup 2022 Operational Analytics")
 st.caption("Analyzing national electrical demand collapse & generation response against 2021 pre-tournament baseline | Source: ONS Open Data")
@@ -104,10 +123,13 @@ with tab1:
     
     fig_curve = go.Figure()
     
+    # Safe retrieval of baseline load column
+    base_load_col = "load_mw_baseline_2021" if "load_mw_baseline_2021" in sin_match_data.columns else "load_mw_baseline"
+    
     # 2021 Baseline load
     fig_curve.add_trace(go.Scatter(
         x=sin_match_data["hour"],
-        y=sin_match_data["load_mw_baseline_2021"],
+        y=sin_match_data[base_load_col],
         mode="lines+markers",
         name=f"2021 Baseline Day ({match_info['baseline_date_2021']})",
         line=dict(color="#8b949e", width=2.5, dash="dash"),
@@ -200,16 +222,18 @@ with tab2:
         secondary_y=False
     )
     
-    # Thermal, Wind, Solar on Right
+    # Thermal on Right
     fig_gen.add_trace(
         go.Scatter(
             x=plot_gen_data["hour"], y=plot_gen_data["thermal_gen_mw"],
             mode="lines+markers", name="Thermal Generation (Right Axis)",
             line=dict(color="#f0883e", width=2.5),
-            marker=dict(size=6)
+            marker=dict(size=5)
         ),
         secondary_y=True
     )
+    
+    # Wind on Right
     fig_gen.add_trace(
         go.Scatter(
             x=plot_gen_data["hour"], y=plot_gen_data["wind_gen_mw"],
@@ -219,11 +243,13 @@ with tab2:
         ),
         secondary_y=True
     )
+    
+    # Solar on Right
     fig_gen.add_trace(
         go.Scatter(
             x=plot_gen_data["hour"], y=plot_gen_data["solar_gen_mw"],
             mode="lines+markers", name="Solar Generation (Right Axis)",
-            line=dict(color="#e3b341", width=2, dash="dot"),
+            line=dict(color="#d29922", width=2, dash="dash"),
             marker=dict(size=5)
         ),
         secondary_y=True
@@ -232,10 +258,11 @@ with tab2:
     fig_gen.add_vrect(
         x0=k_hour - 0.1, x1=end_hour + 0.1,
         fillcolor="#f85149", opacity=0.15,
-        annotation_text="Match in Progress",
+        annotation_text="Match",
         annotation_position="top left"
     )
     
+    # Dynamic ranges to zoom into hydro variations
     min_hydro = plot_gen_data["hydro_gen_mw"].min()
     max_hydro = plot_gen_data["hydro_gen_mw"].max()
     fig_gen.update_yaxes(
@@ -244,18 +271,20 @@ with tab2:
         secondary_y=False
     )
     
-    max_secondary = max(
-        plot_gen_data["thermal_gen_mw"].max(),
-        plot_gen_data["wind_gen_mw"].max(),
-        plot_gen_data["solar_gen_mw"].max()
-    )
+    # Right axis for other sources
+    other_max = max(plot_gen_data["thermal_gen_mw"].max(), plot_gen_data["wind_gen_mw"].max())
     fig_gen.update_yaxes(
-        title_text="Thermal, Wind & Solar (MW) [Right Axis]",
-        range=[0, max_secondary + 1500],
+        title_text="Thermal / Wind / Solar (MW) [Right Axis]",
+        range=[0, other_max + 3000],
         secondary_y=True
     )
     
-    fig_gen.update_xaxes(title_text="Hour of Day (BRT)", tickmode="linear", dtick=1)
+    fig_gen.update_xaxes(
+        title_text="Hour of Day (BRT)",
+        tickmode="linear",
+        dtick=1
+    )
+    
     fig_gen.update_layout(
         template="plotly_dark",
         height=480,
@@ -399,7 +428,8 @@ with tab3:
     st.divider()
     
     st.markdown("**Subsystem Details at Peak Drop Hour:**")
-    sub_table = sub_data[["id_subsistema", "subsystem_name", "load_mw_baseline_2021", "load_mw", "load_drop_mw", "share_of_total_pct"]].copy()
+    base_col_sub = "load_mw_baseline_2021" if "load_mw_baseline_2021" in sub_data.columns else "load_mw_baseline"
+    sub_table = sub_data[["id_subsistema", "subsystem_name", base_col_sub, "load_mw", "load_drop_mw", "share_of_total_pct"]].copy()
     sub_table.columns = ["Subsystem", "Region Description", "2021 Baseline Load (MW)", "2022 Match Load (MW)", "Drop Volume (MW)", "Share of National Drop (%)"]
     st.dataframe(sub_table, use_container_width=True)
 
@@ -417,12 +447,12 @@ with tab4:
 
         subgraph S2 ["2. Bronze Layer (Raw)"]
             direction TB
-            BRONZE["bronze/<br>id_subsistema=*/<br>• Partitioned by Subsystem<br>• Multi-year Historical Windows<br>• Snappy compression"]
+            BRONZE["bronze/<br>id_subsistema=*/<br>- Partitioned by Subsystem<br>- Multi-year Historical Windows<br>- Snappy compression"]
         end
 
         subgraph S3 ["3. Silver Layer (Curated)"]
             direction TB
-            SILVER["silver/grid_silver.parquet<br>• Cleaned column schema<br>• World Cup schedule enrichment<br>• Match & Stage identification"]
+            SILVER["silver/grid_silver.parquet<br>- Cleaned column schema<br>- World Cup schedule enrichment<br>- Match & Stage identification"]
         end
 
         subgraph S4 ["4. Gold Layer (Business KPIs)"]
@@ -448,29 +478,44 @@ with tab4:
         G1 --> SQL
 
         style BRONZE fill:#3d2714,stroke:#cd7f32,stroke-width:2px,color:#fff
-        style SILVER fill:#1c2d3d,stroke:#a0b2c6,stroke-width:2px,color:#fff
-        style G1 fill:#3d3414,stroke:#ffd700,stroke-width:2px,color:#fff
-        style G2 fill:#3d3414,stroke:#ffd700,stroke-width:2px,color:#fff
-        style APP fill:#163820,stroke:#3fb950,stroke-width:2px,color:#fff
+        style SILVER fill:#2d333b,stroke:#8b949e,stroke-width:2px,color:#fff
+        style G1 fill:#4a3500,stroke:#d29922,stroke-width:2px,color:#fff
+        style G2 fill:#4a3500,stroke:#d29922,stroke-width:2px,color:#fff
+        style APP fill:#0e4429,stroke:#3fb950,stroke-width:2px,color:#fff
+        style SQL fill:#1f3552,stroke:#58a6ff,stroke-width:2px,color:#fff
     </div>
     <script type="module">
         import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
         mermaid.initialize({ startOnLoad: true, theme: 'dark' });
     </script>
     """
-    components.html(mermaid_code, height=360, scrolling=True)
+    components.html(mermaid_code, height=360)
     
     st.divider()
-    st.subheader("Interactive Parquet Data Browser")
+    st.subheader("Data Access: DuckDB SQL Query Demonstration")
+    st.code('''
+import duckdb
+
+con = duckdb.connect()
+# Query Gold Match Impact Summary directly from Parquet
+df_summary = con.execute("""
+    SELECT 
+        match_id,
+        stage,
+        opponent,
+        match_date,
+        max_load_drop_mw,
+        max_load_drop_pct,
+        post_match_ramp_2h_mw
+    FROM 'data/gold/gold_match_impact_summary.parquet'
+    ORDER BY max_load_drop_mw DESC
+""").df()
+print(df_summary)
+''', language="python")
     
-    layer_sel = st.radio(
-        "Select table to preview:",
-        ["Gold (Match Impact Summary)", "Gold (Hourly Match Comparison)", "Silver (Enriched Grid Records)"],
-        horizontal=True
-    )
-    if layer_sel == "Gold (Match Impact Summary)":
-        st.dataframe(summary_df, use_container_width=True)
-    elif layer_sel == "Gold (Hourly Match Comparison)":
-        st.dataframe(hourly_df.head(50), use_container_width=True)
-    else:
-        st.dataframe(silver_df.head(50), use_container_width=True)
+    st.markdown("""
+    **Pipeline Key Facts:**
+    - **Bronze:** Ingests raw hourly subsystem data directly from ONS Open Data (2021 baseline + 2022 World Cup).
+    - **Silver:** Cleans datatypes, aligns timestamps, flags Brazil match windows and knockout stages.
+    - **Gold:** Computes exact delta MW against identical weekday 2021 baselines, dispatch trajectories, and post-match ramps.
+    """)

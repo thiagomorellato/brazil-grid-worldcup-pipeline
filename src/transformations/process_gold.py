@@ -44,10 +44,14 @@ def process_to_gold():
             merged["stage"] = stage
             merged["match_date"] = m_date
             merged["baseline_date"] = b_date
+            merged["baseline_date_2021"] = b_date
             merged["kickoff_hour"] = kickoff
             merged["id_subsistema"] = sub
             merged["load_drop_mw"] = merged["load_mw_baseline_2021"] - merged["load_mw"]
             merged["load_drop_pct"] = (merged["load_drop_mw"] / merged["load_mw_baseline_2021"] * 100).round(2)
+            
+            # Backwards and forwards compatibility for baseline load column
+            merged["load_mw_baseline"] = merged["load_mw_baseline_2021"]
             
             comparison_rows.append(merged)
             
@@ -82,6 +86,7 @@ def process_to_gold():
             "kickoff_time": f"{match['kickoff_hour']}:00 BRT",
             "result": match["result"],
             "baseline_date_2021": match["baseline_date"],
+            "baseline_date": match["baseline_date"],
             "baseline_load_mw": max_drop_row["load_mw_baseline_2021"],
             "match_load_mw": max_drop_row["load_mw"],
             "max_load_drop_mw": max_drop_row["load_drop_mw"],
