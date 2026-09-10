@@ -275,45 +275,82 @@ with tab2:
     """, unsafe_allow_html=True)
 
 with tab3:
-    st.subheader("3. Subsystem Breakdown: Where Did Demand Fall?")
+    st.subheader("3. Regional Breakdown: Where Did the 11,000+ MW Disappear?")
+    st.markdown("""
+    While all regions experienced a relative ~10% to 15% drop, the **absolute volume of disconnected load** was overwhelmingly concentrated in the country's industrial core.
+    """)
     
     # Filter for the selected match and get drop across subsystems at peak drop hour
     peak_h = int(match_info["peak_drop_hour"].split(":")[0])
     sub_data = hourly_df[(hourly_df["match_id"] == selected_match_id) & (hourly_df["hour"] == peak_h) & (hourly_df["id_subsistema"] != "SIN")].copy()
     sub_data["subsystem_name"] = sub_data["id_subsistema"].map(SUBSYSTEMS)
+    sub_data["share_of_total_pct"] = (sub_data["load_drop_mw"] / sub_data["load_drop_mw"].sum() * 100).round(1)
     
     col_x, col_y = st.columns(2)
     with col_x:
-        fig_sub_bar = px.bar(
+        st.markdown("**Share of National Load Drop (Contribution to Disconnection)**")
+        fig_donut = px.pie(
             sub_data,
-            x="id_subsistema",
-            y="load_drop_mw",
+            values="load_drop_mw",
+            names="id_subsistema",
+            hole=0.45,
             color="id_subsistema",
-            text="load_drop_mw",
-            labels={"id_subsistema": "Subsystem", "load_drop_mw": "Load Drop (MW)"},
+            color_discrete_map={
+                "SE": "#58a6ff",
+                "S": "#3fb950",
+                "NE": "#f0883e",
+                "N": "#a371f7"
+            },
+            labels={"load_drop_mw": "Load Drop (MW)", "id_subsistema": "Subsystem"},
             template="plotly_dark",
-            height=360
+            height=370
         )
-        fig_sub_bar.update_traces(texttemplate="%{text:,.0f} MW", textposition="outside")
-        fig_sub_bar.update_layout(showlegend=False, margin=dict(l=10, r=10, t=20, b=10))
-        st.plotly_chart(fig_sub_bar, use_container_width=True)
-        st.caption("**Absolute Load Drop (MW):** Southeast/Central-West (SE) accounts for over 50% of the national demand drop.")
+        fig_donut.update_traces(textinfo="label+percent+value", texttemplate="%{label}<br>%{percent:.1%}<br>(%{value:,.0f} MW)")
+        fig_donut.update_layout(showlegend=False, margin=dict(l=10, r=10, t=10, b=10))
+        st.plotly_chart(fig_donut, use_container_width=True)
+        st.caption("**Concentration:** Over **55%** of the entire national collapse originated strictly in the Southeast/Central-West (SE) industrial corridor (São Paulo, Rio, Minas Gerais).")
         
     with col_y:
-        fig_sub_pct = px.bar(
-            sub_data,
-            x="id_subsistema",
-            y="load_drop_pct",
+        st.markdown("**Regional Load Profiles (Hourly Match Trajectory)**")
+        # Multi-line hourly load comparison by subsystem
+        k_hour = int(match_info["kickoff_time"].split(":")[0])
+        end_hour = k_hour + (3 if "Croatia" in match_info["opponent"] else 2)
+        sub_hourly = hourly_df[(hourly_df["match_id"] == selected_match_id) & (hourly_df["id_subsistema"] != "SIN")].copy()
+        sub_hourly_window = sub_hourly[(sub_hourly["hour"] >= max(0, k_hour - 3)) & (sub_hourly["hour"] <= min(23, end_hour + 3))]
+        
+        fig_sub_lines = px.line(
+            sub_hourly_window,
+            x="hour",
+            y="load_mw",
             color="id_subsistema",
-            text="load_drop_pct",
-            labels={"id_subsistema": "Subsystem", "load_drop_pct": "Percentage Drop (%)"},
+            markers=True,
+            color_discrete_map={
+                "SE": "#58a6ff",
+                "S": "#3fb950",
+                "NE": "#f0883e",
+                "N": "#a371f7"
+            },
+            labels={"hour": "Hour of Day (BRT)", "load_mw": "Load (MW)", "id_subsistema": "Subsystem"},
             template="plotly_dark",
-            height=360
+            height=370
         )
-        fig_sub_pct.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
-        fig_sub_pct.update_layout(showlegend=False, margin=dict(l=10, r=10, t=20, b=10))
-        st.plotly_chart(fig_sub_pct, use_container_width=True)
-        st.caption("**Percentage Drop (%):** Both South and Southeast experienced a massive ~15% instant reduction in total power demand.")
+        fig_sub_lines.add_vrect(
+            x0=k_hour - 0.1, x1=end_hour + 0.1,
+            fillcolor="#f85149", opacity=0.15,
+            annotation_text="Match",
+            annotation_position="top left"
+        )
+        fig_sub_lines.update_layout(margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+        st.plotly_chart(fig_sub_lines, use_container_width=True)
+        st.caption("**Trajectory:** Notice the deep U-shape crater in the Southeast (SE) load line, dropping from 46,000 MW to under 40,000 MW during kickoff.")
+
+    st.divider()
+    
+    # Subsystems reference table
+    st.markdown("**Subsystem Details at Peak Drop Hour:**")
+    sub_table = sub_data[["id_subsistema", "subsystem_name", "load_mw_baseline", "load_mw", "load_drop_mw", "share_of_total_pct"]].copy()
+    sub_table.columns = ["Subsystem", "Region Description", "Baseline Load (MW)", "Match Load (MW)", "Drop Volume (MW)", "Share of National Drop (%)"]
+    st.dataframe(sub_table, use_container_width=True)
 
 with tab4:
     st.subheader("Data Lakehouse End-to-End Architecture")
