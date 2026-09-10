@@ -71,6 +71,15 @@ flowchart LR
     style G2 fill:#3d3414,stroke:#ffd700,stroke-width:2px,color:#fff
     style APP fill:#163820,stroke:#3fb950,stroke-width:2px,color:#fff
 ```
+---
+
+## Grid Demand Collapse & Generation Response Analytics
+
+![Brazil Power Grid Demand Collapse and ONS Dispatch Response](docs/img/worldcup_grid_analytics_preview.png)
+
+*Real operational data extracted from the Gold analytical lakehouse layer. Left: National electrical load collapse during Brazil vs Croatia (Quarter-Final) plunging by -18,623 MW (-23.0%) compared to the identical 2021 pre-tournament weekday baseline. Right: ONS generation dispatch response showing hydropower throttling down to prevent severe grid over-frequency while thermal generation remains locked flat at ~7,900 MW to preserve physical synchronous inertia.*
+
+
 
 ---
 
